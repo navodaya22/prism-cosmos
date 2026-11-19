@@ -119,7 +119,7 @@
     .hud-left {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 24px;
       min-width: 0;
       flex: 1 1 auto;
     }
@@ -161,7 +161,7 @@
       display: flex;
       flex-direction: column;
       line-height: 1.08;
-      min-width: 78px;
+      min-width: 92px;
       flex-shrink: 0;
     }
 
@@ -965,10 +965,10 @@
         gap: 6px;
       }
       .hud-left {
-        gap: 9px;
+        gap: 14px;
       }
       .stat-block {
-        min-width: 54px;
+        min-width: 62px;
       }
       .stat-label {
         font-size: 8px;
@@ -1136,7 +1136,7 @@
           <canvas id="nextCanvas" width="68" height="68" aria-label="Next Planet Preview"></canvas>
         </div>
 
-        <button id="autoBtn" class="auto-btn" type="button" aria-pressed="false" title="Toggle Auto-Drop every 2s">
+        <button id="autoBtn" class="auto-btn" type="button" aria-pressed="false" title="Toggle Auto-Drop">
           <span class="auto-dot" aria-hidden="true"></span>
           <span id="autoBtnText">AUTO: OFF</span>
         </button>
@@ -1281,26 +1281,28 @@
 
       /* =======================================================================
          1. LOGICAL COSMIC WORLD (640x720) & 8 CELESTIAL PLANET TIERS
-         Exact requested radii: 24, 34, 45, 57, 70, 84, 100, 118 px.
+         Radii scaled up ~8% inside the 640x720 chamber for tighter stacking.
          ======================================================================= */
       const WORLD_W = 640;
       const WORLD_H = 720;
       const DROP_Y = 66;
       const DANGER_Y = 144;
       const DANGER_NEAR_BAND = 88;
-      const DANGER_LIMIT = 3.0;
+      const DANGER_LIMIT = 1.5;
       const GRACE_PERIOD = 0.9;
-      const DROP_COOLDOWN = 0.34;
-      const AUTO_INTERVAL = 2.0;
+      const DROP_COOLDOWN = 0.22;
+      const AUTO_INTERVAL_BASE = 1.30;
+      const AUTO_INTERVAL_MIN = 0.90;
       const COMBO_WINDOW = 1.45;
 
       // Custom 2D circle rigid-body physics (2 substeps x 6 iterations per frame)
+      // +30% gravity & reduced restitution for brisker falls and tighter stacks
       const FIXED_DT = 1 / 60;
       const SUBSTEPS = 2;
       const SOLVER_ITERS = 6;
-      const GRAVITY = 1580;
-      const WALL_RESTITUTION = 0.22;
-      const BODY_RESTITUTION = 0.16;
+      const GRAVITY = 2054;
+      const WALL_RESTITUTION = 0.14;
+      const BODY_RESTITUTION = 0.10;
       const WALL_FRICTION = 0.36;
       const BODY_FRICTION = 0.28;
       const LINEAR_DAMP = 0.9965;
@@ -1313,7 +1315,7 @@
         {
           tier: 1,
           name: 'Asteroid Shard',
-          r: 24,
+          r: 26,
           points: 10,
           color: '#7ee8ff',
           core: '#e8fbff',
@@ -1324,7 +1326,7 @@
         {
           tier: 2,
           name: 'Ice Moon',
-          r: 34,
+          r: 37,
           points: 25,
           color: '#74d7ff',
           core: '#f0fbff',
@@ -1335,7 +1337,7 @@
         {
           tier: 3,
           name: 'Crimson Mars',
-          r: 45,
+          r: 49,
           points: 50,
           color: '#ff5d3a',
           core: '#ffd8c4',
@@ -1346,7 +1348,7 @@
         {
           tier: 4,
           name: 'Golden Venus',
-          r: 57,
+          r: 62,
           points: 100,
           color: '#ffbe3d',
           core: '#fff4cc',
@@ -1357,7 +1359,7 @@
         {
           tier: 5,
           name: 'Oceanic Earth',
-          r: 70,
+          r: 76,
           points: 200,
           color: '#29b6ff',
           core: '#d9f4ff',
@@ -1368,7 +1370,7 @@
         {
           tier: 6,
           name: 'Ringed Saturn',
-          r: 84,
+          r: 91,
           points: 400,
           color: '#f2c977',
           core: '#fff5dc',
@@ -1379,7 +1381,7 @@
         {
           tier: 7,
           name: 'Radiant Sun',
-          r: 100,
+          r: 108,
           points: 800,
           color: '#ffaa1d',
           core: '#fffce0',
@@ -1390,7 +1392,7 @@
         {
           tier: 8,
           name: 'Cosmic Supernova',
-          r: 118,
+          r: 127,
           points: 1600,
           color: '#ff66f0',
           core: '#ffffff',
@@ -1401,6 +1403,22 @@
       ];
 
       const SPAWN_WEIGHTS = [0.34, 0.30, 0.22, 0.14];
+
+      /**
+       * Returns the active Auto-Drop interval scaled smoothly by score:
+       * < 50,000: 1.30s
+       * 50,000–150,000: smoothly ramps down from 1.30s to 1.05s
+       * >= 150,000: ramps down from 1.05s to 0.90s minimum
+       */
+      function getActiveAutoInterval() {
+        if (score < 50000) return AUTO_INTERVAL_BASE;
+        if (score < 150000) {
+          const t = (score - 50000) / 100000;
+          return AUTO_INTERVAL_BASE - t * (AUTO_INTERVAL_BASE - 1.05);
+        }
+        const t = Math.min(1, (score - 150000) / 100000);
+        return Math.max(AUTO_INTERVAL_MIN, 1.05 - t * (1.05 - AUTO_INTERVAL_MIN));
+      }
 
       /* =======================================================================
          2. SAFE LOCALSTORAGE WRAPPERS (INCOGNITO / SANDBOX IFRAME PROOF)
@@ -3552,7 +3570,7 @@
 
         if (autoMode && !isGameOver && !isPaused) {
           autoTimer += dt;
-          if (autoTimer >= AUTO_INTERVAL && dropCooldown <= 0) {
+          if (autoTimer >= getActiveAutoInterval() && dropCooldown <= 0) {
             dropPlanet(true);
           }
         } else if (!autoMode) {
@@ -3772,8 +3790,7 @@
             handleMerge(a, b);
           }
         }
-
-        // Danger Line Proximity & 3-Second Overflow Breach Check
+        // Danger Line Proximity & 1.5-Second Overflow Breach Check
         let anyNear = false;
         let anyBreach = false;
         for (let i = 0; i < bodies.length; i++) {
@@ -3798,10 +3815,11 @@
 
         if (anyBreach) {
           dangerTimer += dt;
-          const secLeft = Math.max(1, Math.ceil(DANGER_LIMIT - dangerTimer));
-          if (dangerTimer >= 0.12 && secLeft !== lastDangerSecond) {
-            lastDangerSecond = secLeft;
-            sound.playDangerTick(secLeft);
+          // Rapid 0.5-second escalating warning ticks (3 -> 2 -> 1 across 1.5s)
+          const tickStep = Math.max(1, Math.ceil((DANGER_LIMIT - dangerTimer) / 0.5));
+          if (dangerTimer >= 0.08 && tickStep !== lastDangerSecond) {
+            lastDangerSecond = tickStep;
+            sound.playDangerTick(tickStep);
           }
           if (dangerTimer >= DANGER_LIMIT) {
             triggerGameOver();
@@ -4134,7 +4152,8 @@
           ctx.globalAlpha = 1;
 
           if (autoMode) {
-            const remain = Math.max(0, 1 - autoTimer / AUTO_INTERVAL);
+            const activeAutoInterval = getActiveAutoInterval();
+            const remain = Math.max(0, 1 - autoTimer / activeAutoInterval);
             const ringR = curSpec.r + 11;
             const startAngle = -Math.PI / 2;
             const endAngle = startAngle + Math.PI * 2 * remain;
@@ -4295,9 +4314,9 @@
           ctx.restore();
         }
 
-        // 9. Danger Countdown (3 - 2 - 1)
-        if (isDangerBreach && !isGameOver && dangerTimer > 0.08) {
-          const secLeft = Math.max(1, Math.ceil(DANGER_LIMIT - dangerTimer));
+        // 9. Danger Countdown (1.5s -> 0.0s)
+        if (isDangerBreach && !isGameOver && dangerTimer > 0.06) {
+          const timeLeft = Math.max(0, DANGER_LIMIT - dangerTimer);
           const progress = Math.min(1, dangerTimer / DANGER_LIMIT);
           const badgeX = WORLD_W - 52;
           const badgeY = DANGER_Y - 32;
@@ -4315,10 +4334,10 @@
           ctx.stroke();
 
           ctx.fillStyle = '#ffffff';
-          ctx.font = '900 23px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+          ctx.font = '900 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(String(secLeft), badgeX, badgeY + 1);
+          ctx.fillText(`${timeLeft.toFixed(1)}s`, badgeX, badgeY + 1);
 
           ctx.fillStyle = `rgba(255, 92, 126, ${(0.72 + dangerPulse * 0.28).toFixed(3)})`;
           ctx.font = '800 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
